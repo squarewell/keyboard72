@@ -1,5 +1,5 @@
-# arm64 (and x86_64, for the Android emulator) libgl2jni.so that runs the
-# original 32-bit engine, packaged as an asset, on the dynarmic ARM32 JIT.
+# arm64 libgl2jni.so that runs the original 32-bit engine, packaged as an
+# asset, on the dynarmic ARM32 JIT (third_party/dynarmic, vendored).
 cmake_minimum_required(VERSION 3.18)
 project(nin_shim C CXX)
 
@@ -24,36 +24,6 @@ set(Boost_INCLUDE_DIR ${THIRD_PARTY}/boost-headers CACHE PATH "" FORCE)
 set(BOOST_ROOT ${THIRD_PARTY}/boost-headers CACHE PATH "" FORCE)
 set(Boost_NO_SYSTEM_PATHS ON CACHE BOOL "" FORCE)
 add_subdirectory(${THIRD_PARTY}/dynarmic dynarmic EXCLUDE_FROM_ALL)
-# Local dynarmic changes live in patches/dynarmic/ and are applied to copies
-# of the files they touch, in the build tree; the submodule stays pristine.
-# The copies replace the originals in the dynarmic target (sources) and come
-# first on its include path (headers).
-set(NIN_DYNARMIC_PATCHED_FILES
-    src/dynarmic/backend/arm64/address_space.cpp
-    src/dynarmic/backend/arm64/address_space.h)
-file(GLOB NIN_DYNARMIC_PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches/dynarmic/*.patch)
-list(SORT NIN_DYNARMIC_PATCHES)
-set(NIN_DYNARMIC_PATCHED ${CMAKE_CURRENT_BINARY_DIR}/dynarmic-patched)
-find_program(NIN_PATCH_EXE patch REQUIRED)
-file(REMOVE_RECURSE ${NIN_DYNARMIC_PATCHED})
-foreach(rel IN LISTS NIN_DYNARMIC_PATCHED_FILES)
-  configure_file(${THIRD_PARTY}/dynarmic/${rel} ${NIN_DYNARMIC_PATCHED}/${rel} COPYONLY)
-endforeach()
-foreach(patch_file IN LISTS NIN_DYNARMIC_PATCHES)
-  execute_process(COMMAND ${NIN_PATCH_EXE} -p1 --forward --batch --quiet -d ${NIN_DYNARMIC_PATCHED} -i ${patch_file}
-                  RESULT_VARIABLE patch_result)
-  if(patch_result)
-    message(FATAL_ERROR "dynarmic patch failed: ${patch_file}")
-  endif()
-endforeach()
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${NIN_DYNARMIC_PATCHES})
-get_target_property(dynarmic_sources dynarmic SOURCES)
-foreach(rel IN LISTS NIN_DYNARMIC_PATCHED_FILES)
-  string(REGEX REPLACE "^src/dynarmic/" "" in_target "${rel}")
-  list(TRANSFORM dynarmic_sources REPLACE "^${in_target}$" "${NIN_DYNARMIC_PATCHED}/${rel}")
-endforeach()
-set_property(TARGET dynarmic PROPERTY SOURCES ${dynarmic_sources})
-target_include_directories(dynarmic BEFORE PRIVATE ${NIN_DYNARMIC_PATCHED}/src)
 
 # Shown instead of the engine's build date ("v. Sep  9 2017"); at most 11 characters.
 set(NIN_VERSION_LABEL "" CACHE STRING "Version label shown by the engine (empty: keep its 2017 build date)")

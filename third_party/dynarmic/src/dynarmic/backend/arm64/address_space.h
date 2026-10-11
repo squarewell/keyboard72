@@ -5,8 +5,9 @@
 
 #pragma once
 
-#include <map>
 #include <optional>
+#include <utility>
+#include <vector>
 
 #include <mcl/stdint.hpp>
 #include <oaknut/code_block.hpp>
@@ -65,6 +66,7 @@ protected:
     EmittedBlockInfo Emit(IR::Block ir_block);
     void Link(EmittedBlockInfo& block);
     void LinkBlockLinks(const CodePtr entry_point, const CodePtr target_ptr, const std::vector<BlockRelocation>& block_relocations_list);
+    void LinkBlockLink(const CodePtr entry_point, const CodePtr target_ptr, std::ptrdiff_t ptr_offset, BlockRelocationType type);
     void RelinkForDescriptor(IR::LocationDescriptor target_descriptor, CodePtr target_ptr);
 
     FakeCall FastmemCallback(u64 host_pc);
@@ -73,12 +75,30 @@ protected:
     oaknut::CodeBlock mem;
     oaknut::CodeGenerator code;
 
+    // What an emitted block keeps for relinking: its size and one flat list of
+    // block-link sites. EmittedBlockInfo (200 bytes, three containers) used to be
+    // stored whole per block, inline in the hash table; its relocations are only
+    // needed while the block is first linked.
+    struct BlockLinkSite {
+        IR::LocationDescriptor target;
+        u32 code_offset;
+        BlockRelocationType type;
+    };
+    struct StoredBlockInfo {
+        size_t size;
+        std::vector<BlockLinkSite> block_links;
+    };
+
     // A IR::LocationDescriptor will have one current CodePtr.
     // However, there can be multiple other CodePtrs which are older, previously invalidated blocks.
     tsl::robin_map<IR::LocationDescriptor, CodePtr> block_entries;
-    std::map<CodePtr, IR::LocationDescriptor> reverse_block_entries;
-    tsl::robin_map<CodePtr, EmittedBlockInfo> block_infos;
-    tsl::robin_map<IR::LocationDescriptor, tsl::robin_set<CodePtr>> block_references;
+    // Sorted by entry point: code is only appended until ClearCache empties everything.
+    std::vector<std::pair<CodePtr, IR::LocationDescriptor>> reverse_block_entries;
+    tsl::robin_map<CodePtr, StoredBlockInfo> block_infos;
+    // Fastmem patch sites by absolute host pc (was a map per block).
+    tsl::robin_map<CodePtr, FastmemPatchInfo> fastmem_patch_info;
+    // Blocks that link to a descriptor. Each block registers once per target.
+    tsl::robin_map<IR::LocationDescriptor, std::vector<CodePtr>> block_references;
 
     ExceptionHandler exception_handler;
     FastmemManager fastmem_manager;

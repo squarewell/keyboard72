@@ -1,6 +1,6 @@
 # arm64 compatibility shim for the original engine
 
-The keyboard's engine (`src/main/jniLibs/armeabi/libgl2jni.so`) is a 32-bit ARM library with no source. Current phones often cannot load 32-bit code at all. This directory builds a replacement `libgl2jni.so` for **arm64-v8a** (and **x86_64** for the Android emulator). The replacement runs the untouched original engine on an ARM32 CPU emulator. The CPU emulator is the [dynarmic](https://github.com/azahar-emu/dynarmic) JIT used by the Citra/Azahar emulators (`third_party/dynarmic`, with a Boost header subset in `third_party/boost-headers`).
+The keyboard's engine (`src/main/jniLibs/armeabi/libgl2jni.so`) is a 32-bit ARM library with no source. Current phones often cannot load 32-bit code at all. This directory builds a replacement `libgl2jni.so` for **arm64-v8a**. The replacement runs the untouched original engine on an ARM32 CPU emulator. The CPU emulator is the [dynarmic](https://github.com/azahar-emu/dynarmic) JIT used by the Citra/Azahar emulators (vendored in `third_party/dynarmic` with its arm64 backend only, plus a Boost header subset in `third_party/boost-headers`).
 
 `NINLib` still loads `gl2jni`, and the original 15 native methods exist unchanged (a few new ones serve the launch page). The original library is packaged as `assets/nintype/libgl2jni-armeabi.so` by the `copyNinEngine` Gradle task. On the first native call that needs it, the shim loads and links that file and runs its constructors. It then forwards every `NINLib` call into it. The engine draws Nintype's own interface through the phone's real OpenGL ES.
 
@@ -37,9 +37,9 @@ Behavior notes:
 
 A normal Gradle build (see the top-level README) needs the SDK, NDK r27 (override with `-Pnin.ndkVersion=…`) and CMake 3.22.1. Native code is always built optimized (`CMAKE_BUILD_TYPE` is forced to Release; Gradle would otherwise build debug APKs' native code at `-O0`).
 
-### dynarmic patches
+### dynarmic changes
 
-Local changes to dynarmic are kept as patches in `patches/dynarmic/`, applied at configure time to build-tree copies of the files they touch (listed in `NIN_DYNARMIC_PATCHED_FILES` in `CMakeLists.txt`). The copies replace the originals in the dynarmic target and come first on its include path, so the submodule stays at its upstream commit. Applying them needs `patch`. `0001-arm64-compact-block-bookkeeping.patch` cuts the arm64 backend's per-block bookkeeping: on a test phone after typing, the keyboard's native heap fell from 289 to 103 MB (total PSS 517 to 330 MB) with unchanged typing times.
+dynarmic is vendored in `third_party/dynarmic`; its `VENDORED.md` lists the source commits and the local changes. The one change so far cuts the arm64 backend's per-block bookkeeping (`backend/arm64/address_space.{h,cpp}`): on a test phone after typing, the keyboard's native heap fell from 289 to 103 MB (total PSS 517 to 330 MB) with unchanged typing times.
 
 ### Backups
 

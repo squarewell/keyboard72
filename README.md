@@ -45,14 +45,15 @@ You need JDK 17 and an Android SDK with platform 33, build-tools 33.0.1,
 NDK 27.2.12479018 and CMake 3.22.1.
 
 ```sh
-git submodule update --init --recursive third_party/dynarmic
 ./build-apk.sh assembleRelease
 ```
 
 The APK ends up in `app/build/outputs/apk/`. `build-apk.sh` keeps the SDK and
 Gradle's cache inside the project folder (`.android-sdk`, `.gradle-home`)
-unless `ANDROID_HOME` or `GRADLE_USER_HOME` is set. Debug builds also include
-x86_64 for the Android emulator; release builds are arm64 only.
+unless `ANDROID_HOME` or `GRADLE_USER_HOME` is set. Only arm64 is built.
+
+dynarmic is included in `third_party/dynarmic`; `VENDORED.md` there says which
+version it is and what was changed.
 
 ### Signing
 
