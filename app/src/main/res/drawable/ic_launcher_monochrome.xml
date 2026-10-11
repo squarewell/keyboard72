@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed icon (Android 13+): the foreground in one color; the system tints it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:pathData="M33,39 V33 H39 M69,33 H75 V39 M75,69 V75 H69 M39,75 H33 V69" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" />
+    <group android:scaleX="0.72" android:scaleY="0.72" android:translateX="15.120" android:translateY="19.512">
+        <path android:pathData="M32,70.74 V50 C32,39 47,37 51,47 L57,61 C61,71 76,69 76,58 V37.26" android:strokeColor="#FFFFFFFF" android:strokeWidth="6.5"
+            android:strokeLineJoin="round" />
+        <path android:pathData="M49.40,29.66 a4.6,4.6 0 1,0 9.20,0 a4.6,4.6 0 1,0 -9.20,0 Z" android:fillColor="#FFFFFFFF" />
+    </group>
+</vector>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher icon background: the launch page's paper and drafting grid. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:pathData="M0,0 H108 V108 H0 Z" android:fillColor="#FF0C0F13" />
+    <path android:pathData="M0,0 V108 M0,0 H108 M9,0 V108 M0,9 H108 M18,0 V108 M0,18 H108 M27,0 V108 M0,27 H108 M36,0 V108 M0,36 H108 M45,0 V108 M0,45 H108 M54,0 V108 M0,54 H108 M63,0 V108 M0,63 H108 M72,0 V108 M0,72 H108 M81,0 V108 M0,81 H108 M90,0 V108 M0,90 H108 M99,0 V108 M0,99 H108 M108,0 V108 M0,108 H108" android:strokeColor="#FF3B4756" android:strokeAlpha="0.45" android:strokeWidth="0.4" />
+</vector>
