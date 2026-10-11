@@ -6,29 +6,35 @@ plugins {
     id 'kotlin-parcelize'
 }
 
+// Release signing: keystore.properties next to this project's settings.gradle
+// (not version-controlled) with storeFile, storePassword, keyAlias and
+// keyPassword. Without it, release builds are signed with the debug key.
+// Read through a provider so Gradle's configuration cache notices changes.
+def keystoreProperties = new Properties()
+def keystoreText = providers.fileContents(rootProject.layout.projectDirectory.file('keystore.properties')).asText
+if (keystoreText.isPresent()) keystoreProperties.load(new StringReader(keystoreText.get()))
+def hasReleaseKey = keystoreProperties.containsKey('storeFile')
+
 android {
     namespace = "com.lurebat.keyboard71"
+    ndkVersion = findProperty('nin.ndkVersion') ?: '27.2.12479018'
     signingConfigs {
-        debug {
-            storeFile file('C:\\Users\\lureb\\Programming\\nintype\\keys.jks')
-            storePassword 'm6420354'
-            keyAlias 'key'
-            keyPassword 'm6420354'
-        }
-        release {
-            storeFile file('C:\\Users\\lureb\\Programming\\nintype\\keys.jks')
-            storePassword 'm6420354'
-            keyAlias 'key'
-            keyPassword 'm6420354'
+        if (hasReleaseKey) {
+            release {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
         }
     }
     defaultConfig {
         compileSdk 33
-        applicationId 'com.lurebat.keyboard71'
+        applicationId 'local.keyboard72'
         minSdkVersion 24
         targetSdkVersion 33
-        versionCode 602
-        versionName "71.5.0"
+        versionCode 700
+        versionName "72.0.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -36,15 +42,16 @@ android {
     buildTypes {
         debug {
             testCoverageEnabled = "true"
+            // x86_64 is for testing in the Android emulator.
+            ndk { abiFilters "arm64-v8a", "x86_64" }
         }
 
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
-            jniDebuggable true
-            debuggable true
-            renderscriptDebuggable true
+            signingConfig hasReleaseKey ? signingConfigs.release : signingConfigs.debug
+            ndk { abiFilters "arm64-v8a" }
         }
     }
 
@@ -55,6 +62,9 @@ android {
 
     composeOptions {
         kotlinCompilerExtensionVersion = "1.4.7"
+        // Live literals (debug builds, for Android Studio's live edit) embed each
+        // source file's absolute path, and with it the builder's user name, in the APK.
+        useLiveLiterals false
     }
 
     compileOptions {
@@ -65,6 +75,7 @@ android {
     namespace 'com.lurebat.keyboard71'
     lint {
         abortOnError false
+        checkReleaseBuilds false
     }
     sourceSets {
         main {
@@ -74,12 +85,48 @@ android {
         }
     }
 
+    // The original engine is a 32-bit ARM library. It now ships as an asset and
+    // runs inside an emulator hosted by a native shim (src/main/cpp), built for
+    // the ABIs each build type lists.
     defaultConfig {
-        ndk {
-            abiFilters "armeabi"
+        externalNativeBuild {
+            cmake {
+                // The engine's own version label ("v. Sep  9 2017" in the spacebar menu) shows this instead.
+                arguments "-DANDROID_STL=c++_static", "-DNIN_VERSION_LABEL=${versionName}"
+            }
+        }
+    }
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+    sourceSets {
+        main {
+            assets.srcDirs += "$buildDir/generated/ninEngineAssets"
+        }
+    }
+    // 16 KB page devices. This AGP (8.0) aligns uncompressed libraries in the
+    // APK to 4 KB only, so ship them compressed and let the installer extract
+    // them; libgl2jni.so itself links with 16 KB segment alignment. DataStore's
+    // prebuilt libdatastore_shared_counter.so is 4 KB aligned and only serves
+    // multi-process DataStore, which this app does not use.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            excludes += ['**/libdatastore_shared_counter.so']
         }
     }
 }
+
+// Package the untouched 32-bit engine as assets/nintype/libgl2jni-armeabi.so.
+def copyNinEngine = tasks.register('copyNinEngine', Copy) {
+    from('src/main/jniLibs/armeabi') { include 'libgl2jni.so' }
+    into "$buildDir/generated/ninEngineAssets/nintype"
+    rename 'libgl2jni.so', 'libgl2jni-armeabi.so'
+}
+preBuild.dependsOn(copyNinEngine)
 tasks.withType(KotlinCompile).configureEach {
     kotlinOptions {
         freeCompilerArgs += [
@@ -108,6 +155,7 @@ dependencies {
     implementation 'androidx.compose.ui:ui-tooling-preview'
     debugImplementation 'androidx.compose.ui:ui-tooling'
     implementation 'androidx.activity:activity-compose:1.7.2'
+    implementation 'androidx.autofill:autofill:1.1.0'  // inline suggestion chips (InlineSuggestionUi)
     testImplementation 'org.jetbrains.kotlin:kotlin-test'
 
 

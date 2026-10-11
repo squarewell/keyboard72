@@ -174,3 +174,14 @@ google-services.json
 
 # Android Profiling
 *.hprof
+
+# Project-local Android SDK, Gradle cache and Android user files (see build-apk.sh)
+/.android-sdk
+/.android-user
+/.gradle-home
+
+# Native build trees
+.cxx/
+
+# Release signing (see app/build.gradle)
+/keystore.properties
