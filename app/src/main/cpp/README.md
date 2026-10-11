@@ -31,7 +31,7 @@ Behavior notes:
 - **Hardware floating point.** The engine was built for soft-float armeabi, so every float operation called a libgcc routine of 20–60 integer instructions. At load, the first instruction of 46 of these routines (`__aeabi_fadd`, `__divsf3`, `__cmpsf2`, conversions, the double versions…) becomes a branch to a VFP version in `vfpfloat.c` that keeps the soft-float calling convention. The results are the same bits as the originals' (NaN payloads aside). That libgcc is not correctly rounded for additions involving denormals, nor for some double subtractions (exponent gap of exactly 33). The VFP code sends those inputs to the original routine through a trampoline, so the engine computes exactly what it did on a phone. A differential test checked this (2.9 M comparisons, 0 mismatches). `NIN_SOFT_FLOAT=1` keeps the original routines.
 - **Diagnostics I/O.** While typing, the engine polls `/proc/self/stat` about 50 times per frame for memory statistics (answered "not found" without a system call). It rewrites a crash breadcrumb (`memtracklatest.trackey`) several times per frame and rotates a memory log (`shinglogs/mninmem.logs`) every few frames. Those two go to `/dev/null` and never exist on disk. They only feed the engine's own crash reports. Learning, dictionary and settings files are untouched. Engine log lines are no longer copied to logcat. Turn that on with `adb shell setprop debug.nin.enginelogs 1` and restart the keyboard.
 - **Engine patches.** A few hash-checked instruction patches cut work the engine does on every frame: its memory tracking and diagnostic reports, rebuilding its Java class/method cache, float-call veneers and three single-threaded atomic helpers. Each one checks the engine's SHA-256 and the original instructions before writing, and keeps results, allocation order and random number use identical. They are on by default; see Switches.
-- **Restart.** `NINLib.restartEngine` (the launch page's Restart engine button) shuts the engine down on the GL thread, closing its host files and descriptors and deleting its GL objects and Java global references, and the next call boots a fresh one. Boot-time settings such as fast memory access then apply without restarting the app.
+- **Restart.** `NINLib.restartEngine` (the launch page's Restart engine button) shuts the engine down on the GL thread, closing its host files and descriptors and deleting its GL objects and Java global references, and the next call boots a fresh one. Boot-time switches (below) then apply without restarting the app.
 
 ## Building
 
@@ -47,14 +47,14 @@ dynarmic is vendored in `third_party/dynarmic`; its `VENDORED.md` lists the sour
 
 ## Switches
 
-These are read when the engine boots. The first five are on by default; turn one off with `adb shell setprop debug.nin.<name> 0` and restart the keyboard (Restart engine on the launch page). `adb logcat -s nin-shim` shows what is active.
+These are read when the engine boots. All but `enginelogs` are on by default; turn one off with `adb shell setprop debug.nin.<name> 0` and restart the engine (Restart engine on the launch page). `adb logcat -s nin-shim` shows what is active.
 
 | Property | Effect |
 | --- | --- |
 | `diag_bypass` | Skips the engine's memory tracking and diagnostic reports. |
 | `jni_sync_bypass` | Keeps the engine's Java class/method cache instead of rebuilding it every frame. With `diag_bypass`: about 62% fewer emulated instructions per typed word and 79% per idle frame. |
 | `float_dispatch`, `byte_cas`, `refcount_add` | Shorter float-call dispatch and synchronization helpers, a further 5.6%. |
-| `jit_fastmem` | Off by default; also the launch page's experimental "fast memory access" setting (either turns it on). Direct JIT access to emulated memory: on a test phone it cut touch handling from 7.4 to 6.2 ms, frame time unchanged. It installs dynarmic's SIGSEGV handler next to ART's, so set it back to off if the keyboard crashes. |
+| `jit_fastmem` | Direct JIT access to emulated memory: on a test phone it cut touch handling from 7.4 to 6.2 ms, frame time unchanged. It installs dynarmic's SIGSEGV handler next to ART's. |
 | `enginelogs` | Copies the engine's own log lines to logcat (off by default). |
 
 On a device, `adb logcat -s nin-shim` prints the boot time and, every 2 s while the keyboard is shown, `perf: N frames/s, step avg … | touch avg …` (engine time per frame and per touch event).

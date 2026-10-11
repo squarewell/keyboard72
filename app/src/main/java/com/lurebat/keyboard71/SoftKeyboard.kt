@@ -76,8 +76,6 @@ class SoftKeyboard : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         keyboard = this
-        // Read when the engine boots, so set it first; it applies from the next boot.
-        NINLib.setJitFastmem(Preferences(this).jitFastmemBlocking())
         window.window?.addFlags(
             WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
                     WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or

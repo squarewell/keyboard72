@@ -7,7 +7,6 @@ import android.provider.Settings
 import android.view.View
 import android.view.ViewTreeObserver
 import android.view.inputmethod.InputMethodManager
-import com.jormy.nin.NINLib
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -202,7 +201,6 @@ private fun <T> Choice(options: List<T>, selected: T, label: (T) -> String, onSe
 private fun Header() {
     Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Mono("KEYBOARD 72", Draft.ink, 30.sp, 6.sp, FontWeight.Bold)
-        Mono("NINTYPE ENGINE  ·  ARM32 → ARM64", Draft.dim, 11.sp, 1.5.sp)
     }
 }
 
@@ -374,18 +372,16 @@ private fun ExtrasSheet(number: String, openKeyboard: () -> Unit) {
     val scope = rememberCoroutineScope()
     val prefs = remember { Preferences(context) }
     val haptics by prefs.haptics.collectAsState(initial = Preferences.Haptics.LIGHT)
-    val fastmem by prefs.jitFastmem.collectAsState(initial = false)
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // The keyboard opens and its boot screen shows the restart.
     fun restart() {
         busy = true
-        status = "Waiting for the keyboard..."
+        status = null
         openKeyboard()
-        NINView.callOnEngine(Backups.TIMEOUT_MS, null, { NINView.restartEngine() to NINLib.jitFastmemActive() }) { result ->
+        NINView.callOnEngine<Long?>(Backups.TIMEOUT_MS, null, { NINView.restartEngine() }) { result ->
             busy = false
-            status = result?.let { (ms, fast) ->
-                "Engine restarted in $ms ms, fast memory access ${if (fast) "on" else "off"}."
-            } ?: KEYBOARD_HINT
+            if (result == null) status = KEYBOARD_HINT
         }
     }
     Sheet(number, "Extras") {
@@ -393,21 +389,6 @@ private fun ExtrasSheet(number: String, openKeyboard: () -> Unit) {
         Spacer(Modifier.height(4.dp))
         Choice(Preferences.Haptics.values().toList(), haptics, { it.label }) { scope.launch { prefs.setHaptics(it) } }
         Spacer(Modifier.height(14.dp))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().clickable {
-                NINLib.setJitFastmem(!fastmem)  // for the next engine boot in this process
-                scope.launch { prefs.setJitFastmem(!fastmem) }
-            }.padding(vertical = 4.dp),
-        ) {
-            Mono(if (fastmem) "[X]" else "[ ]", Draft.accent, 14.sp, 0.5.sp, FontWeight.Bold)
-            Spacer(Modifier.width(10.dp))
-            Column {
-                Mono("FAST MEMORY ACCESS", Draft.ink, 13.sp, 1.sp)
-                Mono("EXPERIMENTAL · APPLIES ON ENGINE RESTART", Draft.dim, 10.sp, 0.5.sp)
-            }
-        }
-        Spacer(Modifier.height(12.dp))
         DraftButton("Restart engine", enabled = !busy, modifier = Modifier.fillMaxWidth()) { restart() }
         status?.let {
             Spacer(Modifier.height(10.dp))
@@ -539,17 +520,7 @@ class Preferences(val context: Context) {
         store.edit { it[intPreferencesKey(HAPTIC_STRENGTH)] = value.ordinal }
     }
 
-    /** Experimental: dynarmic fastmem, read when the engine boots (see NINLib.setJitFastmem). */
-    val jitFastmem: Flow<Boolean> = store.data.map { it[booleanPreferencesKey(JIT_FASTMEM)] ?: false }
-
-    fun jitFastmemBlocking() = runBlocking { jitFastmem.first() }
-
-    suspend fun setJitFastmem(on: Boolean) {
-        store.edit { it[booleanPreferencesKey(JIT_FASTMEM)] = on }
-    }
-
     private companion object {
         const val HAPTIC_STRENGTH = "hapticStrength"
-        const val JIT_FASTMEM = "jitFastmem"
     }
 }

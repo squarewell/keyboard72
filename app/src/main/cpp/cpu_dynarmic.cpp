@@ -32,16 +32,15 @@ using Dynarmic::A32::Exception;
 using Dynarmic::A32::VAddr;
 constexpr size_t kPageBits = 12;
 
-std::atomic<bool> g_appJitFastmem{false};
-std::atomic<bool> g_jitFastmemActive{false};
-
+// Direct JIT access to guest memory: on in the app unless the debug property
+// is 0 (adb shell setprop debug.nin.jit_fastmem 0, then restart the engine);
+// off on the desktop unless NIN_JIT_FASTMEM=1.
 bool jitFastmemSetting() {
   if (const char* value = std::getenv("NIN_JIT_FASTMEM")) return std::strcmp(value, "1") == 0;
 #ifdef __ANDROID__
-  // The app's setting, or the debug property set to 1 (as before the setting).
   char value[PROP_VALUE_MAX] = {};
   __system_property_get("debug.nin.jit_fastmem", value);
-  return g_appJitFastmem.load() || std::strcmp(value, "1") == 0;
+  return std::strcmp(value, "0") != 0;
 #else
   return false;
 #endif
@@ -50,7 +49,6 @@ bool jitFastmemSetting() {
 bool jitFastmemRequested() {
   const bool on = jitFastmemSetting();
   if (on) NIN_LOGI("JIT fastmem enabled");
-  g_jitFastmemActive = on;
   return on;
 }
 
@@ -239,8 +237,6 @@ void Callbacks::ExceptionRaised(VAddr pc, Exception e) {
 
 }  // namespace
 
-void setAppJitFastmem(bool on) { g_appJitFastmem = on; }
-bool jitFastmemActive() { return g_jitFastmemActive; }
 
 std::unique_ptr<Cpu> makeCpu(CpuHost* host, uint8_t* base, uint32_t) {
   return std::make_unique<DynarmicCpu>(host, base);

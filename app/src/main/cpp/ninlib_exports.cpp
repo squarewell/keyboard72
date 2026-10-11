@@ -23,7 +23,6 @@
 #include "android_java.h"
 #include "backup.h"
 #include "boot_log.h"
-#include "cpu.h"
 #include "engine.h"
 #include "log.h"
 
@@ -236,16 +235,9 @@ JNIEXPORT void JNICALL Java_com_jormy_nin_NINLib_step(JNIEnv* env, jclass cls) {
   g_stats.frame(t1, t1 - t0);
 }
 
-// The app's "fast memory access" setting (not part of the original API). Called
-// before the engine boots; it takes effect at the next boot. No Entry: this
-// must not boot the engine.
-JNIEXPORT void JNICALL Java_com_jormy_nin_NINLib_setJitFastmem(JNIEnv*, jclass, jboolean on) {
-  nin::setAppJitFastmem(on);
-}
-
 // Restart from the launch page (not part of the original API): shuts the
-// running engine down so the next call boots a fresh one, which reads settings
-// such as fast memory access again. Called on the GL thread, outside any other
+// running engine down so the next call boots a fresh one, which reads boot-time
+// settings (the debug.nin.* switches) again. Called on the GL thread, outside any other
 // engine call, with the EGL context current (the engine's GL objects are
 // released). Every engine call comes from this thread, so none is waiting on
 // the engine's lock; the boot lock keeps any other from booting meanwhile.
@@ -279,12 +271,6 @@ JNIEXPORT jbyteArray JNICALL Java_com_jormy_nin_NINLib_bootLog(JNIEnv* env, jcla
 
 // Start-up progress (Stage above). No locks: polled from the UI thread.
 JNIEXPORT jint JNICALL Java_com_jormy_nin_NINLib_engineStage(JNIEnv*, jclass) { return g_stage.load(); }
-
-// Whether the running engine's CPU uses fast memory access (false before boot).
-JNIEXPORT jboolean JNICALL Java_com_jormy_nin_NINLib_jitFastmemActive(JNIEnv*, jclass) {
-  std::lock_guard<std::mutex> boot(g_bootLock);
-  return g_engine && nin::jitFastmemActive() ? JNI_TRUE : JNI_FALSE;
-}
 
 // The field's keyboard and return key types (not part of the original API):
 // the globals the engine's iOS host set, watched by Moopad::update.

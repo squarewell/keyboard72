@@ -51,8 +51,6 @@ public class NINLib {
         System.loadLibrary("gl2jni");
     }
 
-    // Keyboard 72: the app's "fast memory access" setting, before the engine boots.
-    public static native void setJitFastmem(boolean on);
 
     // Keyboard 72: shuts the engine down; the next call boots a fresh one (GL thread).
     public static native boolean restartEngine();
@@ -63,8 +61,6 @@ public class NINLib {
     // Keyboard 72: start-up progress, 0 (no engine) to 6 (ready); see ninlib_exports.cpp.
     public static native int engineStage();
 
-    // Keyboard 72: whether the running engine uses fast memory access.
-    public static native boolean jitFastmemActive();
 
     // Keyboard 72: the field's keyboard and return key types, engine numbering
     // (see FieldRules).

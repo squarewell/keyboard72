@@ -35,7 +35,6 @@ class BootScreen(context: Context) : View(context) {
     private var next = 0
     private var elapsedMs = 0
     private var ready = false
-    private var restart = false
     private var watching = false
 
     init {
@@ -43,9 +42,8 @@ class BootScreen(context: Context) : View(context) {
     }
 
     /** Shows the boot log if the engine is not ready, until it is. */
-    fun watch(restart: Boolean = false) {
+    fun watch() {
         if (NINLib.engineStage() == STAGE_READY) return
-        this.restart = restart
         lines.clear()
         next = 0
         elapsedMs = 0
@@ -116,25 +114,12 @@ class BootScreen(context: Context) : View(context) {
         val lineHeight = text.fontSpacing * 1.2f
         val w = width.toFloat()
 
-        // Header.
-        var y = pad - text.ascent()
-        text.color = ACCENT
-        canvas.drawText("KEYBOARD 72", pad, y, text)
-        text.color = DIM
-        canvas.drawText("  ·  NINTYPE ENGINE", pad + text.measureText("KEYBOARD 72"), y, text)
-        val mode = if (restart) "RESTART" else "COLD START"
-        canvas.drawText(mode, w - pad - text.measureText(mode), y, text)
-        y += lineHeight * 0.6f
-        paint.color = LINE
-        paint.strokeWidth = 1f
-        canvas.drawLine(pad, y, w - pad, y, paint)
-
         // Log: the newest lines that fit above the progress ruler.
         val rulerTop = height - pad - 34 * density
-        val logTop = y + lineHeight * 0.4f
+        val logTop = pad
         val fit = ((rulerTop - logTop) / lineHeight).toInt().coerceAtLeast(1)
         val shown = lines.takeLast(fit)
-        y = logTop - text.ascent()
+        var y = logTop - text.ascent()
         canvas.save()
         canvas.clipRect(pad, logTop, w - pad, rulerTop)
         val blink = (SystemClock.uptimeMillis() / 400) % 2 == 0L

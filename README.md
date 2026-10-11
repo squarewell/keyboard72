@@ -33,8 +33,7 @@ Keyboard 71, and it doesn't ask for network access.
   format as the original Nintype, so backups go both ways.
 - Haptics can be set to off, light or strong.
 - Newer emoji font, so the emoji and kaomoji pickers don't have blank spots.
-- An experimental "fast memory access" option, and a button to restart the
-  engine without restarting the app.
+- A button to restart the engine without restarting the app.
 - While the engine starts, the keyboard shows what it's doing instead of a
   blank panel.
 - New settings page and icon.

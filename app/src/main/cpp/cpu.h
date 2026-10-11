@@ -60,10 +60,4 @@ class Cpu {
 // stop_address holds the stop trap; calls return to it.
 std::unique_ptr<Cpu> makeCpu(CpuHost* host, uint8_t* base, uint32_t stop_address);
 
-// The app's "fast memory access" setting (dynarmic's fastmem). Read when the
-// CPU is created, so set it before the engine boots.
-void setAppJitFastmem(bool on);
-// Whether the CPU made last (the running engine's) uses fastmem.
-bool jitFastmemActive();
-
 }  // namespace nin
