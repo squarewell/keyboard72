@@ -103,10 +103,6 @@ private fun Mono(text: String, color: Color = Draft.ink, size: TextUnit = 13.sp,
     Text(text, color = color, fontSize = size, fontFamily = Draft.mono, letterSpacing = spacing, fontWeight = weight,
         lineHeight = size * 1.4f, modifier = modifier, textAlign = align)
 
-@Composable
-private fun Body(text: String, color: Color = Draft.dim, modifier: Modifier = Modifier) =
-    Text(text, color = color, fontSize = 14.sp, lineHeight = 20.sp, modifier = modifier)
-
 /** The drafting grid, fixed to the page. */
 private fun Modifier.draftingGrid() = drawBehind {
     val minor = 12.dp.toPx()
@@ -351,8 +347,6 @@ private fun BackupSheet(number: String, openKeyboard: () -> Unit, closeKeyboard:
     }
 
     Sheet(number, "Backups") {
-        Body("Compatible with original Nintype backups.")
-        Spacer(Modifier.height(12.dp))
         val kinds = listOf(
             Backups.Kind.SETTINGS to "Settings", Backups.Kind.SHORTCUTS to "Shortcuts",
             Backups.Kind.WORDS to "Words", Backups.Kind.READABLE_WORDS to "Words, readable",
