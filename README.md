@@ -35,6 +35,8 @@ Keyboard 71, and it doesn't ask for network access.
 - Newer emoji font, so the emoji and kaomoji pickers don't have blank spots.
 - An experimental "fast memory access" option, and a button to restart the
   engine without restarting the app.
+- While the engine starts, the keyboard shows what it's doing instead of a
+  blank panel.
 - New settings page and icon.
 - No network permissions (they were only used by server mode, which stopped
   working years ago).

@@ -58,6 +58,11 @@ std::vector<uint8_t> readEngineImage(JNIEnv* env) {
   return image;
 }
 
+// Start-up progress for the keyboard's boot screen (NINLib.engineStage), read
+// from the UI thread while the GL thread boots and initializes the engine.
+enum Stage : int { kNoEngine = 0, kLoading = 1, kStarting = 2, kBooted = 3, kInitializing = 4, kReady = 5 };
+std::atomic<int> g_stage{kNoEngine};
+
 // Holds the engine lock for one JNI entry and releases local handles after.
 class Entry {
  public:
@@ -72,6 +77,8 @@ class Entry {
         char prop[PROP_VALUE_MAX] = {};
         __system_property_get("debug.nin.enginelogs", prop);
         platform.echo_engine_logs = prop[0] == '1';
+        platform.before_constructors = [] { g_stage = kStarting; };
+        g_stage = kLoading;
         g_engine = std::make_unique<nin::Engine>(g_java.get(), platform);
         g_java->setEnv(env);
         std::lock_guard<std::recursive_mutex> engine(g_engine->lock());
@@ -80,6 +87,7 @@ class Entry {
         NIN_LOGI("engine image read in %lld ms", (long long)(nowMillis() - t0));
         g_engine->boot(image);
         g_java->endCall();
+        g_stage = kBooted;
         NIN_LOGI("engine booted in %lld ms", (long long)(nowMillis() - t0));
       }
     }
@@ -114,6 +122,7 @@ uint32_t bits(float f) {
 }
 
 bool g_synced = false;
+
 
 double monotonicMs() {
   timespec ts{};
@@ -188,7 +197,9 @@ JNIEXPORT void JNICALL Java_com_jormy_nin_NINLib_init(JNIEnv* env, jclass cls, j
   Entry e(env, cls);
   maybeSync(e);
   int64_t t0 = nowMillis();
+  if (g_stage != kReady) g_stage = kInitializing;
   e.call("init", {uint32_t(w), uint32_t(h), uint32_t(sw), uint32_t(sh)});
+  g_stage = kReady;
   NIN_LOGI("engine init (%dx%d) in %lld ms", w, h, (long long)(nowMillis() - t0));
 }
 
@@ -229,9 +240,13 @@ JNIEXPORT jboolean JNICALL Java_com_jormy_nin_NINLib_restartEngine(JNIEnv* env, 
   g_engine.reset();
   g_java.reset();
   g_synced = false;
+  g_stage = kNoEngine;
   NIN_LOGI("engine shut down for a restart");
   return JNI_TRUE;
 }
+
+// Start-up progress (Stage above). No locks: polled from the UI thread.
+JNIEXPORT jint JNICALL Java_com_jormy_nin_NINLib_engineStage(JNIEnv*, jclass) { return g_stage.load(); }
 
 // Whether the running engine's CPU uses fast memory access (false before boot).
 JNIEXPORT jboolean JNICALL Java_com_jormy_nin_NINLib_jitFastmemActive(JNIEnv*, jclass) {

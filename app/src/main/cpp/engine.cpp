@@ -64,6 +64,7 @@ void Engine::boot(const std::vector<uint8_t>& image) {
   installBionic(*this);
   installGles(*this);
   installJni(*this);
+  if (platform_.before_constructors) platform_.before_constructors();
   guest_.runConstructors();
   NIN_LOGI("engine constructors done");
 }

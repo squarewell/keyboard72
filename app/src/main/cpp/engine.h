@@ -60,6 +60,8 @@ struct Platform {
   bool virtual_clock = false;
   double virtual_now = 1577836800.0;
   bool echo_engine_logs = true;
+  // Called by boot() right before the engine's static constructors run.
+  std::function<void()> before_constructors;
 };
 
 class Engine {

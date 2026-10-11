@@ -143,12 +143,20 @@ class SoftKeyboard : InputMethodService() {
         } else {
             (view.parent as ViewGroup?)?.removeView(view)
         }
-        // The keyboard view fills a frame that can also hold the autofill chips.
+        // The keyboard view fills a frame that can also hold the autofill chips
+        // and the boot screen.
         val root = FrameLayout(this)
         root.addView(ninView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        val screen = bootScreen ?: BootScreen(this).also { bootScreen = it }
+        (screen.parent as ViewGroup?)?.removeView(screen)
+        root.addView(screen, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) inlineStrip.attach(root)
         return root
     }
+
+    /** Shown over the keyboard while the engine starts (BootScreen.kt). */
+    var bootScreen: BootScreen? = null
+        private set
 
     // Password managers' inline autofill chips (Android 11+), over the top bar.
     @get:RequiresApi(Build.VERSION_CODES.R)
@@ -167,6 +175,7 @@ class SoftKeyboard : InputMethodService() {
     override fun onStartInputView(attribute: EditorInfo, restarting: Boolean) {
         super.onStartInputView(attribute, restarting)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !restarting) inlineStrip.clear()
+        bootScreen?.watch()
 
         Log.d("SoftKeyboard",
             "------------ jormoust Editor Info : ${attribute.packageName} | ${attribute.fieldName}|${attribute.inputType}"
