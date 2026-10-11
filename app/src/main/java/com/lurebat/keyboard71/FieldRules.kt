@@ -16,14 +16,16 @@ import kotlinx.coroutines.flow.map
  * engine's board, its privacy mode and the enter key's icon, which reach the
  * engine as its text box mode ("passwd", "uri" or none) and the keyboard-type
  * and return-key-type globals its iOS host used to set (see
- * SoftKeyboard.relayDelayedEvents). The defaults reproduce Keyboard 72's
- * built-in mapping.
+ * SoftKeyboard.relayDelayedEvents). By default text fields of every kind use
+ * slidemode; passwords and fields with no input type use peckmode and are
+ * private; numbers, phone numbers and PINs get the numpad, dates the 123 board.
  */
 object FieldRules {
+    // Labels use Nintype's own names. The enum names are what is stored.
     enum class Board(val label: String, val engineType: Int) {
-        LETTERS("Letters", 0),
-        PECK("Peck + URL bar", 1),  // the engine's URL mode: one letter per tap, no word correction
-        NUMBERS("123 board", 2),
+        LETTERS("Slidemode", 0),
+        PECK("Peckmode", 1),  // with the URL bar: one letter per tap, no word correction
+        NUMBERS("123", 2),
         NUMPAD("Numpad", 3),
     }
 
@@ -33,8 +35,8 @@ object FieldRules {
     }
 
     enum class Enter(val label: String) {
-        ACTION("Field's action"),  // go, next, search, send or done icons
-        RETURN("Plain return"),
+        ACTION("Action"),  // go, next, search, send or done icons
+        RETURN("Enter"),
     }
 
     data class Rule(val board: Board, val privacy: Privacy, val enter: Enter) {
@@ -53,8 +55,8 @@ object FieldRules {
         SEARCH("Search", "Search boxes and filter fields", Rule(Board.LETTERS, Privacy.LEARN, Enter.ACTION)),
         NAME("Names", "Person name fields", Rule(Board.LETTERS, Privacy.LEARN, Enter.ACTION)),
         ADDRESS("Postal addresses", "Street address fields", Rule(Board.LETTERS, Privacy.LEARN, Enter.ACTION)),
-        EMAIL("Email addresses", "Email and web email fields", Rule(Board.PECK, Privacy.LEARN, Enter.ACTION)),
-        URL("Web addresses", "URL fields", Rule(Board.PECK, Privacy.LEARN, Enter.ACTION)),
+        EMAIL("Email addresses", "Email and web email fields", Rule(Board.LETTERS, Privacy.LEARN, Enter.ACTION)),
+        URL("Web addresses", "URL fields", Rule(Board.LETTERS, Privacy.LEARN, Enter.ACTION)),
         PASSWORD("Passwords", "Password, visible password and web password fields", Rule(Board.PECK, Privacy.PRIVATE, Enter.ACTION)),
         PIN("PINs", "Numeric password fields", Rule(Board.NUMPAD, Privacy.PRIVATE, Enter.ACTION)),
         NUMBER("Numbers", "Number fields, signed or decimal", Rule(Board.NUMPAD, Privacy.LEARN, Enter.ACTION)),

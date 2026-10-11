@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewTreeObserver
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -189,14 +190,15 @@ private fun <T> Choice(options: List<T>, selected: T, label: (T) -> String, onSe
                     .clickable { onSelect(option) }
                     .padding(horizontal = 4.dp, vertical = 6.dp),
             ) {
-                Mono(label(option), if (on) Draft.paper else Draft.ink, 11.sp, 0.5.sp,
+                Mono(label(option).uppercase(), if (on) Draft.paper else Draft.ink,
+                    if (options.size > 3) 10.sp else 11.sp, if (options.size > 3) 0.sp else 1.sp,
                     if (on) FontWeight.Bold else FontWeight.Normal, align = TextAlign.Center)
             }
         }
     }
 }
 
-/** Title and engine line. */
+/** Title. */
 @Composable
 private fun Header() {
     Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
@@ -229,17 +231,31 @@ private fun SetupRow(text: String, done: Boolean, action: String, onClick: () ->
 
 /** Per-group input field behavior (see [FieldRules]). */
 @Composable
-private fun FieldSheet(number: String) {
+private fun FieldSheet(number: String, open: () -> Unit) {
+    val context = LocalContext.current
+    val rules by remember { FieldRules.flow(context) }.collectAsState(initial = FieldRules.defaults())
+    val changed = FieldRules.Group.values().count { (rules[it] ?: it.default) != it.default }
+    Sheet(number, "Input fields") {
+        DraftButton(if (changed == 0) "Configure" else "Configure  ·  $changed changed", modifier = Modifier.fillMaxWidth()) { open() }
+    }
+}
+
+/** The input field settings, a page of their own (see [FieldRules]). */
+@Composable
+private fun FieldsPage(number: String, back: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val rules by remember { FieldRules.flow(context) }.collectAsState(initial = FieldRules.defaults())
     var open by rememberSaveable { mutableStateOf<String?>(null) }
-    Sheet(number, "Input field behavior") {
+    Mono("< BACK", Draft.accent, 13.sp, 2.sp, FontWeight.Bold,
+        modifier = Modifier.clickable { back() }.padding(top = 8.dp, bottom = 4.dp))
+    Sheet(number, "Input fields") {
         for (group in FieldRules.Group.values()) {
             val rule = rules[group] ?: group.default
             val expanded = open == group.name
-            val summary = if (group.privacyOnly) rule.privacy.label.uppercase()
-            else "${rule.board.label} / ${rule.privacy.label} / ${if (rule.enter == FieldRules.Enter.ACTION) "Action" else "Return"}".uppercase()
+            val summary = if (group.privacyOnly) rule.privacy.label
+            else "${rule.board.label} · ${rule.privacy.label} · ${rule.enter.label}"
+            val changed = rule != group.default
             Column(modifier = Modifier.fillMaxWidth().border(1.dp, if (expanded) Draft.accent else Draft.line.copy(alpha = 0.6f))) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -250,7 +266,7 @@ private fun FieldSheet(number: String) {
                 ) {
                     Column(Modifier.weight(1f)) {
                         Mono(group.label.uppercase(), Draft.ink, 12.sp, 1.sp, FontWeight.Bold)
-                        Mono(summary + if (rule != group.default) "  *" else "", if (rule != group.default) Draft.accent else Draft.dim, 10.sp, 0.5.sp)
+                        Mono(summary.uppercase(), if (changed) Draft.accent else Draft.dim, 10.sp, 0.5.sp)
                     }
                     Mono(if (expanded) "−" else "+", Draft.dim, 16.sp, 0.sp)
                 }
@@ -258,19 +274,12 @@ private fun FieldSheet(number: String) {
                     Column(modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 12.dp)) {
                         fun save(new: FieldRules.Rule) = scope.launch { FieldRules.set(context, group, new) }
                         if (!group.privacyOnly) {
-                            Spacer(Modifier.height(4.dp))
-                            Mono("BOARD", Draft.dim, 10.sp, 2.sp)
-                            Spacer(Modifier.height(4.dp))
                             Choice(FieldRules.Board.values().toList(), rule.board, { it.label }) { save(rule.copy(board = it)) }
+                            Spacer(Modifier.height(6.dp))
                         }
-                        Spacer(Modifier.height(10.dp))
-                        Mono("PRIVACY", Draft.dim, 10.sp, 2.sp)
-                        Spacer(Modifier.height(4.dp))
                         Choice(FieldRules.Privacy.values().toList(), rule.privacy, { it.label }) { save(rule.copy(privacy = it)) }
                         if (!group.privacyOnly) {
-                            Spacer(Modifier.height(10.dp))
-                            Mono("ENTER KEY", Draft.dim, 10.sp, 2.sp)
-                            Spacer(Modifier.height(4.dp))
+                            Spacer(Modifier.height(6.dp))
                             Choice(FieldRules.Enter.values().toList(), rule.enter, { it.label }) { save(rule.copy(enter = it)) }
                         }
                     }
@@ -296,10 +305,7 @@ private fun BackupSheet(number: String, openKeyboard: () -> Unit, closeKeyboard:
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         val export = pending
         pending = null
-        if (uri == null || export == null) {
-            status = "Export cancelled."
-            return@rememberLauncherForActivityResult
-        }
+        if (uri == null || export == null) return@rememberLauncherForActivityResult
         status = try {
             context.contentResolver.openOutputStream(uri, "wt")!!.use { it.write(export.second) }
             "${export.first.label} saved."
@@ -316,7 +322,7 @@ private fun BackupSheet(number: String, openKeyboard: () -> Unit, closeKeyboard:
             return@rememberLauncherForActivityResult
         }
         busy = true
-        status = "Waiting for the keyboard..."
+        status = null
         openKeyboard()
         Backups.import(text) { result ->
             busy = false
@@ -329,7 +335,7 @@ private fun BackupSheet(number: String, openKeyboard: () -> Unit, closeKeyboard:
     }
     fun export(kind: Backups.Kind) {
         busy = true
-        status = "Waiting for the keyboard..."
+        status = null
         openKeyboard()
         Backups.export(kind) { result ->
             busy = false
@@ -440,11 +446,25 @@ class NINActivity : ComponentActivity() {
             MaterialTheme(colorScheme = darkColorScheme(background = Draft.paper, surface = Draft.paper)) {
                 val tryFocus = remember { FocusRequester() }
                 val keyboardController = LocalSoftwareKeyboardController.current
+                // The input field settings are a page of their own; Back returns.
+                var fieldsPage by rememberSaveable { mutableStateOf(false) }
+                BackHandler(enabled = fieldsPage) { fieldsPage = false }
+                val mainScroll = rememberScrollState()
                 Box(modifier = Modifier.fillMaxSize().background(Draft.paper)) {
-                    Column(
+                    if (fieldsPage) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .draftingGrid()
+                                .padding(horizontal = 20.dp, vertical = 16.dp),
+                        ) {
+                            FieldsPage("05") { fieldsPage = false }
+                        }
+                    } else Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
+                            .verticalScroll(mainScroll)
                             .draftingGrid()
                             .padding(horizontal = 20.dp, vertical = 16.dp),
                     ) {
@@ -489,7 +509,7 @@ class NINActivity : ComponentActivity() {
 
                         ExtrasSheet("04", openKeyboard)
 
-                        FieldSheet("05")
+                        FieldSheet("05") { fieldsPage = true }
 
                         ThanksSheet("06")
                     }
