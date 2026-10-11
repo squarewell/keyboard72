@@ -16,8 +16,14 @@ sealed class TextBoxEvent {
         val mode: String?
     ) : TextBoxEvent()
 
-    data class AppFieldChange(val packageName: String?, val field: String?, val mode: String?) :
-        TextBoxEvent()
+    /** [keyboardType] and [returnKeyType] use the engine's numbering (see FieldRules). */
+    data class AppFieldChange(
+        val packageName: String?,
+        val field: String?,
+        val mode: String?,
+        val keyboardType: Int = 0,
+        val returnKeyType: Int = 0,
+    ) : TextBoxEvent()
 
     data class WordDestruction(var destroyedWord: String?, var destroyedString: String?) :
         TextBoxEvent()

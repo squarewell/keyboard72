@@ -2,8 +2,13 @@
 
 package com.lurebat.keyboard71
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.inputmethodservice.InputMethodService
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -12,8 +17,13 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.inputmethod.InlineSuggestionsRequest
+import android.view.inputmethod.InlineSuggestionsResponse
+import android.widget.FrameLayout
+import androidx.annotation.RequiresApi
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import com.jormy.nin.NINLib
 import com.jormy.nin.NINLib.onChangeAppOrTextbox
 import com.jormy.nin.NINLib.onExternalSelChange
 import com.jormy.nin.NINLib.onTextSelection
@@ -21,6 +31,13 @@ import com.jormy.nin.NINLib.onWordDestruction
 import com.lurebat.keyboard71.BuildConfig
 import com.lurebat.keyboard71.tasker.triggerBasicTaskerEvent
 import java.util.concurrent.ConcurrentLinkedQueue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlin.math.min
 
 
@@ -44,15 +61,49 @@ class SoftKeyboard : InputMethodService() {
 
     private var selectionMode = false
 
+    // With the screen off the keyboard's surface stays alive, so its render loop
+    // would keep running with nothing pacing it. (The original app paused on lock
+    // instead, which also stopped the keyboard on the lock screen.)
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> ninView?.onPause()
+                Intent.ACTION_SCREEN_ON -> ninView?.onResume()
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         keyboard = this
+        // Read when the engine boots, so set it first; it applies from the next boot.
+        NINLib.setJitFastmem(Preferences(this).jitFastmemBlocking())
         window.window?.addFlags(
             WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
                     WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                     WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
         )
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(screenReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(screenReceiver, filter)
+        }
+        // Field behavior from the launch page, kept current while the keyboard runs.
+        FieldRules.current = runBlocking { FieldRules.flow(this@SoftKeyboard).first() }
+        rulesScope.launch { FieldRules.flow(this@SoftKeyboard).collect { FieldRules.current = it } }
+    }
 
+    private val rulesScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    override fun onDestroy() {
+        rulesScope.cancel()
+        mainHandler.removeCallbacks(surfaceCheck)
+        unregisterReceiver(screenReceiver)
+        super.onDestroy()
     }
 
     override fun onUpdateSelection(
@@ -92,33 +143,41 @@ class SoftKeyboard : InputMethodService() {
         } else {
             (view.parent as ViewGroup?)?.removeView(view)
         }
+        // The keyboard view fills a frame that can also hold the autofill chips.
+        val root = FrameLayout(this)
+        root.addView(ninView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) inlineStrip.attach(root)
+        return root
+    }
 
-        return ninView!!
+    // Password managers' inline autofill chips (Android 11+), over the top bar.
+    @get:RequiresApi(Build.VERSION_CODES.R)
+    private val inlineStrip by lazy { InlineSuggestionStrip(this) }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    override fun onCreateInlineSuggestionsRequest(uiExtras: Bundle): InlineSuggestionsRequest =
+        inlineStrip.request()
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    override fun onInlineSuggestionsResponse(response: InlineSuggestionsResponse): Boolean {
+        inlineStrip.show(response.inlineSuggestions)
+        return true
     }
 
     override fun onStartInputView(attribute: EditorInfo, restarting: Boolean) {
         super.onStartInputView(attribute, restarting)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !restarting) inlineStrip.clear()
 
         Log.d("SoftKeyboard",
             "------------ jormoust Editor Info : ${attribute.packageName} | ${attribute.fieldName}|${attribute.inputType}"
         )
-        var keyboardType = ""
+        val field = FieldRules.resolve(attribute)
 
-        when (attribute.inputType and EditorInfo.TYPE_MASK_CLASS) {
-            EditorInfo.TYPE_CLASS_TEXT -> {
-                val variation = attribute.inputType and EditorInfo.TYPE_MASK_VARIATION
-                if (variation == EditorInfo.TYPE_TEXT_VARIATION_URI || variation == EditorInfo.TYPE_TEXT_VARIATION_EMAIL_ADDRESS) {
-                    keyboardType = "uri"
-                }
-                if (variation == EditorInfo.TYPE_TEXT_VARIATION_PASSWORD) {
-                    keyboardType = "passwd"
-                }
-            }
-        }
-
-        doTextEvent(
-            TextBoxEvent.AppFieldChange(attribute.packageName, attribute.fieldName, keyboardType)
+        val fieldChange = TextBoxEvent.AppFieldChange(
+            attribute.packageName, attribute.fieldName, field.mode, field.keyboardType, field.returnKeyType,
         )
+        lastFieldChange = fieldChange
+        doTextEvent(fieldChange)
 
         lazyString = LazyStringRope(
             SimpleCursor(attribute.initialSelStart, attribute.initialSelEnd),
@@ -130,6 +189,45 @@ class SoftKeyboard : InputMethodService() {
         )
 
         signalCursorCandidacyResult(currentInputConnection, "startInputView")
+
+        mainHandler.removeCallbacks(surfaceCheck)
+        mainHandler.postDelayed(surfaceCheck, SURFACE_CHECK_DELAY_MS)
+    }
+
+    // Showing the keyboard again shortly after hiding it (seen on recent Android versions) can
+    // bring the window back without its GL surface: the SurfaceView released it
+    // on hide and is never told to recreate it, so the keyboard stays blank until
+    // the input method is restarted. Toggling the view itself does not help;
+    // cycling the window's visibility makes the SurfaceView create a new surface.
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var lastFieldChange: TextBoxEvent.AppFieldChange? = null
+
+    /** Tells a freshly restarted engine about the current field and text (see NINView.restartEngine). */
+    fun resendField() = mainHandler.post {
+        lastFieldChange?.let { doTextEvent(it) }
+        signalCursorCandidacyResult(currentInputConnection, "restart")
+    }
+    private var surfaceRecoveries = 0
+    private val surfaceCheck = Runnable { restoreLostSurface() }
+
+    private fun restoreLostSurface() {
+        val view = ninView ?: return
+        if (!isInputViewShown || view.holder.surface.isValid) {
+            if (surfaceRecoveries > 0) Log.i(TAG, "surface restored")
+            surfaceRecoveries = 0
+            return
+        }
+        if (surfaceRecoveries == MAX_SURFACE_RECOVERIES) {
+            Log.e(TAG, "surface still missing after $surfaceRecoveries recoveries")
+            surfaceRecoveries = 0
+            return
+        }
+        surfaceRecoveries += 1
+        Log.w(TAG, "keyboard shown without a surface; cycling window visibility")
+        val decor = window.window?.decorView ?: return
+        decor.visibility = View.INVISIBLE
+        mainHandler.post { decor.visibility = View.VISIBLE }
+        mainHandler.postDelayed(surfaceCheck, SURFACE_CHECK_DELAY_MS)
     }
 
     @Deprecated("Deprecated in Java")
@@ -347,11 +445,10 @@ class SoftKeyboard : InputMethodService() {
                     Log.d("NIN", "Relaying delayed event: $event")
                 }
                 when (event) {
-                    is TextBoxEvent.AppFieldChange -> onChangeAppOrTextbox(
-                        event.packageName,
-                        event.field,
-                        event.mode
-                    )
+                    is TextBoxEvent.AppFieldChange -> {
+                        NINLib.setFieldTypes(event.keyboardType, event.returnKeyType)
+                        onChangeAppOrTextbox(event.packageName, event.field, event.mode)
+                    }
 
                     TextBoxEvent.Reset -> onExternalSelChange()
 
@@ -625,6 +722,11 @@ class SoftKeyboard : InputMethodService() {
         }
 
     companion object {
+        private const val TAG = "SoftKeyboard"
+
+        private const val SURFACE_CHECK_DELAY_MS = 150L
+        private const val MAX_SURFACE_RECOVERIES = 2
+
         var keyboard: SoftKeyboard? = null
         var ninView: NINView? = null
 
@@ -635,7 +737,9 @@ class SoftKeyboard : InputMethodService() {
             }
         }
 
-        fun doTextEvent(event: TextBoxEvent) = keyboard?.textBoxEventQueue?.add(event)
+        fun doTextEvent(event: TextBoxEvent) = keyboard?.textBoxEventQueue?.add(event).also {
+            NINView.wakeRenderer()  // relayed by the next frame
+        }
 
         private fun keyDownUp(
             ic: InputConnection,

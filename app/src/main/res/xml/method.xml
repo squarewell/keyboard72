@@ -1,2 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<input-method xmlns:android="http://schemas.android.com/apk/res/android"/>
+<!-- Inline suggestions: password managers' autofill chips over the top bar (SoftKeyboard.kt). -->
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:supportsInlineSuggestions="true" />

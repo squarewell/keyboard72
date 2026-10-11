@@ -12,6 +12,7 @@ import android.view.GestureDetector.SimpleOnGestureListener
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import com.jormy.nin.EXSurfaceView
+import com.jormy.nin.NINLib
 import com.jormy.nin.NINLib.init
 import com.jormy.nin.NINLib.onTouchEvent
 import com.jormy.nin.NINLib.step
@@ -19,12 +20,18 @@ import com.jormy.nin.NINLib.syncTiming
 import com.jormy.nin.Utils.prin
 import com.jormy.nin.Utils.tracedims
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.LockSupport
 import javax.microedition.khronos.egl.EGL10
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.egl.EGLContext
 import javax.microedition.khronos.egl.EGLDisplay
 import javax.microedition.khronos.opengles.GL10
 import kotlin.math.min
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class NINView(context: Context) : EXSurfaceView(context) {
     var desiredRoenFullscreen = false
@@ -33,10 +40,32 @@ class NINView(context: Context) : EXSurfaceView(context) {
     var xViewScaling = 1.0f
     var yViewScaling = 1.0f
     private val preferences = Preferences(context)
+
+    // The haptic setting is checked for every pointer of every touch event.
+    // Follow it as it changes instead of blocking the UI thread on a
+    // DataStore read each time.
+    @Volatile
+    private var haptics = preferences.hapticsBlocking()
+    private var preferenceScope: CoroutineScope? = null
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        haptics = preferences.hapticsBlocking()
+        preferenceScope = CoroutineScope(Dispatchers.Main.immediate).also { scope ->
+            scope.launch { preferences.haptics.collect { haptics = it } }
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        preferenceScope?.cancel()
+        preferenceScope = null
+        super.onDetachedFromWindow()
+    }
+
     private val gestureDetector = GestureDetector(getContext(), object : SimpleOnGestureListener() {
         override fun onLongPress(e: MotionEvent) {
             super.onLongPress(e)
-            if (preferences.hapticFeedbackBlocking()) {
+            if (haptics != Preferences.Haptics.OFF) {
                 this@NINView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
             }
         }
@@ -207,6 +236,7 @@ class NINView(context: Context) : EXSurfaceView(context) {
             )
         }
         globalView.requestRender()
+        wakeRenderer()
         return true
     }
 
@@ -214,11 +244,14 @@ class NINView(context: Context) : EXSurfaceView(context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O_MR1) {
             return
         }
-        if (!preferences.hapticFeedbackBlocking()) {
+        if (actionId != MotionEvent.ACTION_DOWN && actionId != MotionEvent.ACTION_POINTER_DOWN) {
             return
         }
-        if (actionId == MotionEvent.ACTION_DOWN || actionId == MotionEvent.ACTION_POINTER_DOWN) {
-            this.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+        // Light is Android's key tap; Strong is its heavier long-press click.
+        when (haptics) {
+            Preferences.Haptics.OFF -> {}
+            Preferences.Haptics.LIGHT -> performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            Preferences.Haptics.STRONG -> performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
         }
     }
 
@@ -256,6 +289,7 @@ class NINView(context: Context) : EXSurfaceView(context) {
 
     class Renderer : EXSurfaceView.Renderer {
         override fun onDrawFrame(gl10: GL10) {
+            paceFrozenStep()
             while (true) {
                 val rti = movementEventsQueue.poll()
                 if (rti != null) {
@@ -270,6 +304,9 @@ class NINView(context: Context) : EXSurfaceView(context) {
                     )
                 } else {
                     SoftKeyboard.keyboard?.relayDelayedEvents()
+                    if (System.nanoTime() - surfaceChangedNanos > SETTLED_NANOS) {
+                        while (true) engineTasks.poll()?.run() ?: break
+                    }
                     step()
                     return
                 }
@@ -278,16 +315,105 @@ class NINView(context: Context) : EXSurfaceView(context) {
 
         // com.jormy.nin.EXSurfaceView.Renderer
         override fun onSurfaceChanged(gl10: GL10, width: Int, height: Int) {
-            val metrics = globalView.resources.displayMetrics
-            val widthPixels = metrics.widthPixels
-            val heightPixels = metrics.heightPixels
-            init(width, height, widthPixels, heightPixels)
+            surfaceChangedNanos = System.nanoTime()
+            surfaceWidth = width
+            surfaceHeight = height
+            initEngine()
         }
 
         override fun onSurfaceCreated(gl10: GL10, config: EGLConfig) {}
     }
 
     companion object {
+        // Idle pacing. The renderer is continuous, as in the original app, and
+        // the engine must keep stepping while idle: its timers (spacebar
+        // messages, freeze countdowns) run inside steps. But a frozen engine
+        // draws nothing, so its steps no longer wait for the display and ran
+        // at the shim's 250 Hz floor. While frozen, space steps at 60 Hz, the
+        // display rate of the phones the engine was written for; a touch or
+        // editor event ends the wait at once. Drawing frames are unchanged.
+        private const val FROZEN_STEP_NANOS = 16_666_667L
+        @Volatile private var engineFrozen = false
+        @Volatile private var renderThread: Thread? = null
+        private val wakeRequested = AtomicBoolean(false)
+        private var lastStepNanos = 0L
+
+        // Work that must run on this thread with the engine initialized, i.e. while
+        // the keyboard is shown (backups from the launch page; see Backups.kt).
+        // It waits until the keyboard has kept its size for a moment: a fresh
+        // keyboard is resized twice, and each resize reloads the board and closes
+        // any prompt the work opened.
+        val engineTasks = ConcurrentLinkedQueue<Runnable>()
+        private const val SETTLED_NANOS = 500_000_000L
+        @Volatile private var surfaceChangedNanos = 0L
+
+        @Volatile private var surfaceWidth = 0
+        @Volatile private var surfaceHeight = 0
+
+        fun runOnEngine(task: Runnable) {
+            engineTasks.add(task)
+            wakeRenderer()
+        }
+
+        /**
+         * Runs [work] with [runOnEngine] and hands its result to [done] on the main
+         * thread, or [fallback] if the keyboard does not get to it within [timeoutMs].
+         */
+        fun <T> callOnEngine(timeoutMs: Long, fallback: T, work: () -> T, done: (T) -> Unit) {
+            val main = Handler(Looper.getMainLooper())
+            val claimed = AtomicBoolean(false)
+            val timeout = Runnable { if (claimed.compareAndSet(false, true)) done(fallback) }
+            runOnEngine {
+                if (!claimed.compareAndSet(false, true)) return@runOnEngine
+                val result = work()
+                main.post {
+                    main.removeCallbacks(timeout)
+                    done(result)
+                }
+            }
+            main.postDelayed(timeout, timeoutMs)
+        }
+
+        private fun initEngine() {
+            val metrics = globalView.resources.displayMetrics
+            init(surfaceWidth, surfaceHeight, metrics.widthPixels, metrics.heightPixels)
+        }
+
+        /**
+         * Shuts the engine down and boots a fresh one in place (launch page,
+         * Extras), so settings read at boot such as fast memory access apply
+         * without restarting the app. Runs as an engine task. Returns the boot
+         * time in milliseconds.
+         */
+        fun restartEngine(): Long {
+            val start = System.nanoTime()
+            NINLib.restartEngine()
+            engineFrozen = false
+            initEngine()  // boots the new engine
+            surfaceChangedNanos = System.nanoTime()  // later tasks wait for it to settle
+            SoftKeyboard.keyboard?.resendField()
+            return (System.nanoTime() - start) / 1_000_000
+        }
+
+        fun wakeRenderer() {
+            wakeRequested.set(true)
+            renderThread?.let { LockSupport.unpark(it) }
+        }
+
+        private fun paceFrozenStep() {
+            renderThread = Thread.currentThread()
+            if (engineFrozen) {
+                val deadline = lastStepNanos + FROZEN_STEP_NANOS
+                while (!wakeRequested.get()) {
+                    val left = deadline - System.nanoTime()
+                    if (left <= 0) break
+                    LockSupport.parkNanos(left)
+                }
+            }
+            wakeRequested.set(false)
+            lastStepNanos = System.nanoTime()
+        }
+
         var globalContextFactory: ContextFactory? = null
         lateinit var globalView: NINView
         var movementEventsQueue: ConcurrentLinkedQueue<RelayTouchInfo> = ConcurrentLinkedQueue()
@@ -336,6 +462,7 @@ class NINView(context: Context) : EXSurfaceView(context) {
 
 
         fun onRoenFrozennessChange(truth: Boolean) {
+            engineFrozen = truth
             if (!truth) {
                 globalView.requestRender()
             }
