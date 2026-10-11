@@ -37,6 +37,9 @@ Keyboard 71, and it doesn't ask for network access.
 - While the engine starts, the keyboard shows what it's doing instead of a
   blank panel.
 - New settings page and icon.
+- A "keyboard 72" theme in the theme presets, dark with a drafting grid and
+  amber touches to match the settings page. Its grid replaces the light dither
+  pattern (pattern 5), which none of the original presets use.
 - No network permissions (they were only used by server mode, which stopped
   working years ago).
 

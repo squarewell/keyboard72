@@ -16,8 +16,8 @@ object Backups {
     enum class Kind(val code: Int, val label: String, val fileName: String) {
         SETTINGS(0, "Settings", "settings"),
         SHORTCUTS(3, "Shortcuts", "shortcuts"),
-        WORDS(1, "Learned words", "words"),
-        READABLE_WORDS(2, "Learned words (readable)", "words-readable"),
+        WORDS(1, "Words", "words"),
+        // 2 is the learned words as a readable list, which cannot be imported.
     }
 
     sealed interface Result {

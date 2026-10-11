@@ -301,6 +301,7 @@ private fun BackupSheet(number: String, openKeyboard: () -> Unit, closeKeyboard:
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var pending by remember { mutableStateOf<Pair<Backups.Kind, ByteArray>?>(null) }
+    var kind by rememberSaveable { mutableStateOf(Backups.Kind.SETTINGS) }
 
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         val export = pending
@@ -350,20 +351,14 @@ private fun BackupSheet(number: String, openKeyboard: () -> Unit, closeKeyboard:
         }
     }
 
-    Sheet(number, "Backups") {
-        val kinds = listOf(
-            Backups.Kind.SETTINGS to "Settings", Backups.Kind.SHORTCUTS to "Shortcuts",
-            Backups.Kind.WORDS to "Words", Backups.Kind.READABLE_WORDS to "Words, readable",
-        )
-        for (pair in kinds.chunked(2)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-                for ((kind, label) in pair) {
-                    DraftButton("Export $label", enabled = !busy, modifier = Modifier.weight(1f)) { export(kind) }
-                }
+    Sheet(number, "Backup and restore") {
+        Choice(Backups.Kind.values().toList(), kind, { it.label }) { kind = it }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            DraftButton("Export", enabled = !busy, modifier = Modifier.weight(1f)) { export(kind) }
+            DraftButton("Import", enabled = !busy, filled = true, modifier = Modifier.weight(1f)) {
+                open.launch(arrayOf("text/*", "application/octet-stream"))
             }
-        }
-        DraftButton("Import from a file", enabled = !busy, filled = true, modifier = Modifier.fillMaxWidth()) {
-            open.launch(arrayOf("text/*", "application/octet-stream"))
         }
         status?.let {
             Spacer(Modifier.height(10.dp))
