@@ -32,7 +32,7 @@ if(NIN_VERSION_LABEL)
 endif()
 
 add_library(gl2jni SHARED
-  boot_log.cpp guest.cpp engine.cpp engine_patch.cpp memory_query.cpp backup.cpp diag_bypass.cpp jni_sync_bypass.cpp
+  boot_log.cpp guest.cpp engine.cpp engine_patch.cpp field_types.cpp memory_query.cpp backup.cpp diag_bypass.cpp jni_sync_bypass.cpp
   hot_dispatch.cpp bionic_hle.cpp gles_bridge.cpp jni_bridge.cpp cpu_dynarmic.cpp android_java.cpp ninlib_exports.cpp)
 target_link_libraries(gl2jni PRIVATE dynarmic GLESv2 android log)
 target_link_options(gl2jni PRIVATE -Wl,--exclude-libs,ALL -Wl,-z,max-page-size=16384)

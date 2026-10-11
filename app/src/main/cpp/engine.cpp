@@ -8,6 +8,7 @@
 #include "jni_sync_bypass.h"
 #include "memory_query.h"
 #include "backup.h"
+#include "field_types.h"
 #include "hot_dispatch.h"
 
 namespace nin {
@@ -57,6 +58,7 @@ void Engine::boot(const std::vector<uint8_t>& image) {
   if (refcountAddRequested()) installRefcountAdd(guest_, image);
   installMemoryQuery(guest_, image);
   installBackupPrompts(guest_, image);
+  installFieldTypes(guest_, image);
 #ifdef NIN_VERSION_LABEL
   patchVersionLabels(guest_, NIN_VERSION_LABEL);
 #endif

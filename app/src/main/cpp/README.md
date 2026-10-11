@@ -45,6 +45,8 @@ dynarmic is vendored in `third_party/dynarmic`; its `VENDORED.md` lists the sour
 
 `backup.cpp` serves the launch page's export and import buttons. It calls the engine's own exporters (`Moopad::getSettingsExport`, `getWordExport`, `getReadableWordExport`, `SpaceCompleter::getShortcutsExport`) and hands file text to `ImportationModule::importText`, the path behind the engine's "import from clipboard". It also patches the two import prompts to open at a real point rather than `RoenGL::pagemid()`, whose page size is never set on Android.
 
+`field_types.cpp` keeps the board each field gets in the field rules' hands. The engine, written for iOS, switched to URL peck mode by itself whenever the enter key was go, Google, search or Yahoo; one instruction in `Moopad::updateAndMonitorIOSKeyboardTypeChange` now leaves that to the keyboard type the rules send.
+
 ## Switches
 
 These are read when the engine boots. All but `enginelogs` are on by default; turn one off with `adb shell setprop debug.nin.<name> 0` and restart the engine (Restart engine on the launch page). `adb logcat -s nin-shim` shows what is active.
