@@ -11,6 +11,7 @@
 #include <sys/auxv.h>
 #endif
 
+#include "boot_log.h"
 #include "guest.h"
 #include "log.h"
 
@@ -105,7 +106,10 @@ bool installEnginePatches(Guest& g, const std::vector<uint8_t>& image,
   constexpr std::array<uint32_t, 8> expected = {0x813e4ce3, 0xb7fb3286, 0x92000ca8, 0x7b7c99ff,
                                                0xb1a9b490, 0xd1daeea5, 0x0b451622, 0xd1626995};
   // Computed once per boot: every patch set checks the same image.
-  if (g.engineImageVerified < 0) g.engineImageVerified = sha256(image) == expected;
+  if (g.engineImageVerified < 0) {
+    g.engineImageVerified = sha256(image) == expected;
+    if (g.engineImageVerified) bootLog(BootLine::Info, "verified sha-256 813e4ce3...");
+  }
   if (!g.engineImageVerified) {
     NIN_LOGW("%s refused: engine SHA-256 mismatch (no patches applied)", label);
     return false;
@@ -120,6 +124,8 @@ bool installEnginePatches(Guest& g, const std::vector<uint8_t>& image,
   for (size_t i = 0; i < count; i++)
     if (patches[i].before != patches[i].after)
       g.w32(kImageBase + patches[i].offset, patches[i].after);
+  bootLog(BootLine::Info, std::string("patched ") + label + " (" + std::to_string(count) +
+                              (count == 1 ? " site)" : " sites)"));
   return true;
 }
 

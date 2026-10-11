@@ -57,7 +57,10 @@ public class NINLib {
     // Keyboard 72: shuts the engine down; the next call boots a fresh one (GL thread).
     public static native boolean restartEngine();
 
-    // Keyboard 72: start-up progress, 0 (no engine) to 5 (ready); see ninlib_exports.cpp.
+    // Keyboard 72: the boot screen's log from line `next` on (see boot_log.h), UTF-8.
+    public static native byte[] bootLog(int next);
+
+    // Keyboard 72: start-up progress, 0 (no engine) to 6 (ready); see ninlib_exports.cpp.
     public static native int engineStage();
 
     // Keyboard 72: whether the running engine uses fast memory access.

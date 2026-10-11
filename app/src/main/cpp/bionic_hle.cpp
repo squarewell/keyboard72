@@ -25,6 +25,7 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
+#include "boot_log.h"
 #include "engine.h"
 #include "fastlibc_blob.h"
 #include "log.h"
@@ -141,6 +142,7 @@ struct Bionic {
   }
 
   void logLine(int prio, const std::string& tag, const std::string& text) {
+    bootLog(BootLine::Engine, text);
     if (!e.platform().echo_engine_logs) return;
 #ifdef __ANDROID__
     __android_log_write(prio, tag.c_str(), text.c_str());

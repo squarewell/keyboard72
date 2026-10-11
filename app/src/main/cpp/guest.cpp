@@ -7,6 +7,7 @@
 #include <elf.h>
 #include <sys/mman.h>
 
+#include "boot_log.h"
 #include "fastlibc_blob.h"
 #include "log.h"
 
@@ -293,6 +294,8 @@ void Guest::loadElf(const std::vector<uint8_t>& image) {
   for (uint32_t i = 0; i < initsz / 4; i++) initArray_.push_back(r32(kImageBase + init + 4 * i));
   NIN_LOGI("engine loaded: %zu imports, %zu symbols, %zu constructors", imports_.size(),
            defined_.size(), initArray_.size());
+  bootLog(BootLine::Info, "linked " + std::to_string(defined_.size()) + " symbols, " +
+                              std::to_string(imports_.size()) + " imports");
 }
 
 void Guest::installNativeBlob() {
@@ -376,9 +379,11 @@ void Guest::installHardFloat(bool redirect) {
     patched++;
   }
   NIN_LOGI("hardware floating point: %d routines redirected", patched);
+  bootLog(BootLine::Info, std::to_string(patched) + " soft-float routines -> VFP");
 }
 
 void Guest::runConstructors() {
+  bootLog(BootLine::Info, std::to_string(initArray_.size()) + " static constructors");
   for (uint32_t fn : initArray_)
     if (fn != 0 && fn != 0xffffffff) call(fn, {});
 }

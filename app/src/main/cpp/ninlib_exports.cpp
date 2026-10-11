@@ -22,6 +22,7 @@
 
 #include "android_java.h"
 #include "backup.h"
+#include "boot_log.h"
 #include "cpu.h"
 #include "engine.h"
 #include "log.h"
@@ -60,8 +61,9 @@ std::vector<uint8_t> readEngineImage(JNIEnv* env) {
 
 // Start-up progress for the keyboard's boot screen (NINLib.engineStage), read
 // from the UI thread while the GL thread boots and initializes the engine.
-enum Stage : int { kNoEngine = 0, kLoading = 1, kStarting = 2, kBooted = 3, kInitializing = 4, kReady = 5 };
+enum Stage : int { kNoEngine = 0, kLoading = 1, kStarting = 2, kBooted = 3, kInitializing = 4, kDrawing = 5, kReady = 6 };
 std::atomic<int> g_stage{kNoEngine};
+int g_stepsDrawn = 0;  // GL thread
 
 // Holds the engine lock for one JNI entry and releases local handles after.
 class Entry {
@@ -77,7 +79,12 @@ class Entry {
         char prop[PROP_VALUE_MAX] = {};
         __system_property_get("debug.nin.enginelogs", prop);
         platform.echo_engine_logs = prop[0] == '1';
-        platform.before_constructors = [] { g_stage = kStarting; };
+        platform.before_constructors = [] {
+          g_stage = kStarting;
+          nin::bootLog(nin::BootLine::Step, "starting engine");
+        };
+        nin::bootLogBegin();
+        nin::bootLog(nin::BootLine::Step, "loading engine");
         g_stage = kLoading;
         g_engine = std::make_unique<nin::Engine>(g_java.get(), platform);
         g_java->setEnv(env);
@@ -85,6 +92,9 @@ class Entry {
         int64_t t0 = nowMillis();
         std::vector<uint8_t> image = readEngineImage(env);
         NIN_LOGI("engine image read in %lld ms", (long long)(nowMillis() - t0));
+        char size[48];
+        std::snprintf(size, sizeof size, "read libgl2jni.so, %.1f MB (armeabi)", image.size() / 1048576.0);
+        nin::bootLog(nin::BootLine::Info, size);
         g_engine->boot(image);
         g_java->endCall();
         g_stage = kBooted;
@@ -197,9 +207,16 @@ JNIEXPORT void JNICALL Java_com_jormy_nin_NINLib_init(JNIEnv* env, jclass cls, j
   Entry e(env, cls);
   maybeSync(e);
   int64_t t0 = nowMillis();
-  if (g_stage != kReady) g_stage = kInitializing;
+  if (g_stage < kInitializing) {
+    g_stage = kInitializing;
+    nin::bootLog(nin::BootLine::Step, "loading dictionaries + layout");
+  }
   e.call("init", {uint32_t(w), uint32_t(h), uint32_t(sw), uint32_t(sh)});
-  g_stage = kReady;
+  if (g_stage == kInitializing) {
+    g_stage = kDrawing;
+    g_stepsDrawn = 0;
+    nin::bootLog(nin::BootLine::Step, "drawing keyboard");
+  }
   NIN_LOGI("engine init (%dx%d) in %lld ms", w, h, (long long)(nowMillis() - t0));
 }
 
@@ -210,6 +227,12 @@ JNIEXPORT void JNICALL Java_com_jormy_nin_NINLib_step(JNIEnv* env, jclass cls) {
   double t0 = monotonicMs();
   e.call("step", {});
   double t1 = monotonicMs();
+  // The first frames after init compile the drawing code (~0.2 s each); the
+  // second one shows the whole keyboard.
+  if (g_stage == kDrawing && ++g_stepsDrawn >= 2) {
+    g_stage = kReady;
+    nin::bootLogEnd();
+  }
   g_stats.frame(t1, t1 - t0);
 }
 
@@ -243,6 +266,15 @@ JNIEXPORT jboolean JNICALL Java_com_jormy_nin_NINLib_restartEngine(JNIEnv* env, 
   g_stage = kNoEngine;
   NIN_LOGI("engine shut down for a restart");
   return JNI_TRUE;
+}
+
+// The boot screen's log lines from `next` on (boot_log.h), as UTF-8 bytes:
+// engine lines are not guaranteed to be valid modified UTF-8 for NewStringUTF.
+JNIEXPORT jbyteArray JNICALL Java_com_jormy_nin_NINLib_bootLog(JNIEnv* env, jclass, jint next) {
+  std::string text = nin::bootLogRead(uint32_t(next));
+  jbyteArray out = env->NewByteArray(jsize(text.size()));
+  env->SetByteArrayRegion(out, 0, jsize(text.size()), reinterpret_cast<const jbyte*>(text.data()));
+  return out;
 }
 
 // Start-up progress (Stage above). No locks: polled from the UI thread.

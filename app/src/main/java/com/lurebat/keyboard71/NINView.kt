@@ -419,7 +419,7 @@ class NINView(context: Context) : EXSurfaceView(context) {
         fun restartEngine(): Long {
             val start = System.nanoTime()
             NINLib.restartEngine()
-            SoftKeyboard.keyboard?.bootScreen?.let { screen -> screen.post { screen.watch() } }
+            SoftKeyboard.keyboard?.bootScreen?.let { screen -> screen.post { screen.watch(restart = true) } }
             engineFrozen = false
             initEngine()  // boots the new engine
             surfaceChangedNanos = System.nanoTime()  // later tasks wait for it to settle
