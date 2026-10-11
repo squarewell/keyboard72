@@ -24,3 +24,7 @@ commits, except for the changes listed below. Licenses: `LICENSE.txt`
 - `src/dynarmic/backend/arm64/address_space.{h,cpp}`: compact per-block
   bookkeeping (see that commit's message). It cut the keyboard's memory after
   typing on a test phone from 517 to 330 MB with unchanged typing times.
+- `src/dynarmic/common/memory_pool.cpp`: freed IR instruction slabs (one per
+  compiled block, a few hundred KiB each) are kept per thread for reuse. With
+  GrapheneOS's hardened allocator every such allocation was a fresh mapping,
+  and that alone more than doubled the engine's start-up time.
