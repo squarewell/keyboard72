@@ -146,6 +146,8 @@ class Guest : public CpuHost {
   std::string describe(uint32_t address) const override { return symbolize(address); }
 
   uint32_t importCalls = 0;
+  // Whether the loaded image is the known original engine (engine_patch.cpp); -1 until checked.
+  int engineImageVerified = -1;
 
  private:
   void onImport(uint32_t index);

@@ -76,7 +76,9 @@ class Entry {
         g_java->setEnv(env);
         std::lock_guard<std::recursive_mutex> engine(g_engine->lock());
         int64_t t0 = nowMillis();
-        g_engine->boot(readEngineImage(env));
+        std::vector<uint8_t> image = readEngineImage(env);
+        NIN_LOGI("engine image read in %lld ms", (long long)(nowMillis() - t0));
+        g_engine->boot(image);
         g_java->endCall();
         NIN_LOGI("engine booted in %lld ms", (long long)(nowMillis() - t0));
       }
@@ -185,7 +187,9 @@ JNIEXPORT jlong JNICALL Java_com_jormy_nin_NINLib_syncTiming(JNIEnv*, jclass, jl
 JNIEXPORT void JNICALL Java_com_jormy_nin_NINLib_init(JNIEnv* env, jclass cls, jint w, jint h, jint sw, jint sh) {
   Entry e(env, cls);
   maybeSync(e);
+  int64_t t0 = nowMillis();
   e.call("init", {uint32_t(w), uint32_t(h), uint32_t(sw), uint32_t(sh)});
+  NIN_LOGI("engine init (%dx%d) in %lld ms", w, h, (long long)(nowMillis() - t0));
 }
 
 JNIEXPORT void JNICALL Java_com_jormy_nin_NINLib_step(JNIEnv* env, jclass cls) {
