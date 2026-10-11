@@ -44,6 +44,7 @@ class BootScreen(context: Context) : View(context) {
         animate().cancel()
         alpha = 1f
         visibility = VISIBLE
+        NINView.holdLayout()
         if (!watching) {
             watching = true
             post(poll)
@@ -67,11 +68,21 @@ class BootScreen(context: Context) : View(context) {
             invalidate()
             if (stage == STAGE_READY) {
                 watching = false
+                NINView.releaseLayout(SETTLE_MS)
                 animate().alpha(0f).setStartDelay(150).setDuration(150).withEndAction { visibility = GONE }
             } else {
                 postDelayed(this, POLL_MS)
             }
         }
+    }
+
+    // Takes the keyboard's height rather than setting it: as the frame's only
+    // other child, an unconstrained height would stretch the keyboard to the
+    // whole screen.
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val height = if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.EXACTLY)
+            MeasureSpec.getSize(heightMeasureSpec) else 0
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), height)
     }
 
     // Touches would only queue up behind the boot; keep them from the keyboard.
@@ -131,6 +142,7 @@ class BootScreen(context: Context) : View(context) {
 
     private companion object {
         const val POLL_MS = 50L
+        const val SETTLE_MS = 600L  // engine size requests settle within ~400 ms of init
         // NINLib.engineStage (ninlib_exports.cpp)
         const val STAGE_NO_ENGINE = 0
         const val STAGE_LOADING = 1

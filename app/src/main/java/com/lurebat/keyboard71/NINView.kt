@@ -1,6 +1,7 @@
 package com.lurebat.keyboard71
 
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.opengl.EGL14
 import android.os.Build
@@ -86,7 +87,35 @@ class NINView(context: Context) : EXSurfaceView(context) {
         val metrics = resources.displayMetrics
         devicePPI = metrics.xdpi
         devicePortraitWidth = Math.min(metrics.widthPixels, metrics.heightPixels).toFloat()
+        restoreSize()
         onResume()
+    }
+
+    // The engine sets the keyboard's size only once it has started; until then
+    // the view used an 800-unit default. Start at the size it last asked for
+    // (per orientation: the same units give different heights) instead.
+    private val sizePrefs
+        get() = context.getSharedPreferences("keyboard_size", Context.MODE_PRIVATE)
+    private val orientationKey
+        get() = if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) "landscape" else "portrait"
+
+    private fun restoreSize() {
+        val key = orientationKey
+        desiredRoenPixelHeight = sizePrefs.getFloat("height_$key", desiredRoenPixelHeight)
+        desiredRoenFullscreen = sizePrefs.getBoolean("fullscreen_$key", desiredRoenFullscreen)
+        desiredScaling = sizePrefs.getFloat("scaling", desiredScaling)
+        requestedHeight = desiredRoenPixelHeight
+        requestedFullscreen = desiredRoenFullscreen
+        requestedScaling = desiredScaling
+    }
+
+    private fun saveSize() {
+        val key = orientationKey
+        sizePrefs.edit()
+            .putFloat("height_$key", desiredRoenPixelHeight)
+            .putBoolean("fullscreen_$key", desiredRoenFullscreen)
+            .putFloat("scaling", desiredScaling)
+            .apply()
     }
 
     class ContextFactory : EGLContextFactory {
@@ -200,7 +229,9 @@ class NINView(context: Context) : EXSurfaceView(context) {
     }
 
     val desiredPixelWidth: Float
-        get() {
+        get() = desiredPixelWidthFor(desiredScaling)
+
+    private fun desiredPixelWidthFor(scaling: Float): Float {
             val metrics = resources.displayMetrics
             val width = metrics.widthPixels.toFloat()
             val height = metrics.heightPixels.toFloat()
@@ -208,7 +239,7 @@ class NINView(context: Context) : EXSurfaceView(context) {
             val portraitPixels = min(width, height)
             val portraitInches = portraitPixels / ppi
             val pixelPerfectRoenPixelWidth = desiredRoenPixelWidth * (portraitInches / 1.9631902f)
-            val desiredPortrait = pixelPerfectRoenPixelWidth / desiredScaling
+            val desiredPortrait = pixelPerfectRoenPixelWidth / scaling
             lastDesiredPortrait = desiredPortrait
             return if (width <= height) desiredPortrait else desiredPortrait * (width / height)
         }
@@ -452,9 +483,44 @@ class NINView(context: Context) : EXSurfaceView(context) {
 
 
         fun adjustWantedScaling(scaling: Float) {
-            desiredScaling = scaling
-            Handler(Looper.getMainLooper()).post { globalView.requestLayout() }
+            requestedScaling = scaling
+            sizeChanged()
         }
+
+        // The engine's latest size request (GL thread). Copied to the size in
+        // use (desiredScaling, desiredRoenPixelHeight, desiredRoenFullscreen)
+        // by applySize, so a layout pass during the hold below keeps the old size.
+        @Volatile private var requestedScaling = 1.0f
+        @Volatile private var requestedHeight = 800.0f
+        @Volatile private var requestedFullscreen = false
+
+        // While the engine starts, its size requests change within a few
+        // hundred ms (e.g. 432 units, then 560 once its settings apply). The
+        // boot screen holds layout until they settle, so the keyboard keeps its
+        // size instead of jumping; only the last request is applied.
+        private val main = Handler(Looper.getMainLooper())
+        private var layoutHeld = false
+        private val applySize = Runnable {
+            layoutHeld = false
+            desiredScaling = requestedScaling
+            globalView.desiredRoenPixelHeight = requestedHeight
+            globalView.desiredRoenFullscreen = requestedFullscreen
+            globalView.requestLayout()
+            globalView.saveSize()
+        }
+
+        /** Holds the engine's size requests; [release] applies the last one after [settleMs]. */
+        fun holdLayout() {
+            main.removeCallbacks(applySize)
+            layoutHeld = true
+        }
+
+        fun releaseLayout(settleMs: Long) {
+            main.removeCallbacks(applySize)
+            main.postDelayed(applySize, settleMs)
+        }
+
+        private fun sizeChanged() = main.post { if (!layoutHeld) applySize.run() }
 
 
         fun onRoenSignalDirty() {
@@ -470,27 +536,16 @@ class NINView(context: Context) : EXSurfaceView(context) {
         }
 
         fun adjustKeyboardDimensions(wantedRoenHeight: Float, fullscreen: Boolean) {
-            globalView.desiredRoenPixelHeight = 2.0f * wantedRoenHeight
-            globalView.desiredRoenFullscreen = fullscreen
-            prin("::::::::::: onAdjustKeyboardDimension : $wantedRoenHeight // $fullscreen")
+            var height = 2.0f * wantedRoenHeight
             if (fullscreen) {
                 val metrics = globalView.resources.displayMetrics
-                val wwww = metrics.widthPixels.toFloat()
-                val height = (metrics.heightPixels - 240).toFloat()
-                val wantedratio = height / wwww
-                tracedims("fullmode metrics, after cut", wwww, height)
-                val desiredpixwidth = globalView.desiredPixelWidth
-                globalView.desiredRoenPixelHeight = desiredpixwidth * wantedratio
-                prin("Desired pixwidth : $desiredpixwidth")
+                val wantedRatio = (metrics.heightPixels - 240).toFloat() / metrics.widthPixels.toFloat()
+                height = globalView.desiredPixelWidthFor(requestedScaling) * wantedRatio
             }
-            prin("what is scaling: " + desiredScaling)
-            if (!fullscreen) {
-                prin("Roenpixheight : " + globalView.desiredRoenPixelHeight + " from " + wantedRoenHeight)
-            } else {
-                prin("Roenpixheight : " + globalView.desiredRoenPixelHeight)
-            }
-
-            Handler(Looper.getMainLooper()).post { globalView.requestLayout() }
+            prin("::::::::::: onAdjustKeyboardDimension : $wantedRoenHeight // $fullscreen -> $height")
+            requestedHeight = height
+            requestedFullscreen = fullscreen
+            sizeChanged()
         }
     }
 }
