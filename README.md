@@ -1,47 +1,41 @@
 # Keyboard 72
 
-Nintype on current phones. This is a fork of lurebat's
-[Keyboard 71](https://github.com/lurebat/keyboard71).
+Nintype (or keyboard 69 on android) ported to arm64. Tested on a pixel 10. Forked from lurebat's
+[Keyboard 71](https://github.com/lurebat/keyboard71), which is itself a (very good!) attempt at fixing up and modernizing nintype.
 
-Nintype's engine is a closed-source 32-bit ARM library, and a lot of newer
-phones can't run 32-bit code at all anymore. Keyboard 72 includes a small ARM32
-emulator (built on [dynarmic](https://github.com/azahar-emu/dynarmic)), so the
-original engine still runs, unmodified, inside a normal arm64 app. Swiping,
-peck mode, word learning and the keyboard's interface are all still Nintype's
-own code.
+This packages the original nintype engine inside dynarmic (the emulator/recompiler from yuzu and related) with a bunch of compatibility fixes and patches to strip dynarmic down to only the bare minimum needed. Memory usage is up a bit from the original (extra 100MB or so, ish) but all the original memory leaks are fixed. Network access/servermode removed so there isn't a weird permission popping up. 
 
-It installs as its own app (`local.keyboard72`), so it can sit next to
-Keyboard 71, and it doesn't ask for network access.
+This took a mind boggling amount of LLM usage (probably 1-5B tokens split between opus 5.5 and astra? mostly documentation/research) but most of the actual high level decisions and design choices were made by me. Feel free to fork/download/whatever, I may not be very available to fix things. 
 
-## Changes from Keyboard 71
+It's very hard (impossible?) to make extensive changes to the binary as one person without LLMs, so I might clean up and publish the messy research repo documenting the decompiled version at some point, also working on a native port but no clue if that'll work.
 
-- Runs on arm64-only phones. How the emulator works is described in
-  [app/src/main/cpp/README.md](app/src/main/cpp/README.md).
-- Uses much less CPU while idle or with the screen off, so leaving the keyboard
-  open no longer drains the battery.
-- Fixed the keyboard sometimes coming up blank when reopened right after being
-  hidden.
-- Password fields of every kind (including PINs) are private: nothing gets
-  learned and no suggestions are shown. They also type one letter at a time,
-  which fixes doubled characters in some browsers.
+Thanks for a great keyboard jormy!
+
+#nintype4lyfe
+## Changes
+
+- Runs on modern arm64-only phones. Some extra documentation here:
+  [app/src/main/cpp/README.md](app/src/main/cpp/README.md)
+- Multiple memory leaks in the original nintype binary fixed, now should be stable for 30+ min
+  open time (indefinitely, really, but not tested for that long)
+- Lots of optimizations in the binary, faster frametime and drawing, unnecessary 
+  logging/diagnostics/etc. removed, frames no longer get rendered while not visible, 
+  rendering paused when not typing to save battery, etc., 
+- Should open properly on any input field now without having to close/reopen 
+- Password fields of every kind (including PINs) are now detected correctly and characters aren't
+  doubled up sometimes (hopefully)
 - Number and phone fields open the number pad, date fields the number board,
-  and the enter key shows the field's action (go, search, send and so on).
-- How each kind of field behaves can be changed in the app.
+  and the enter key shows the field's action (go, search, send, etc)
+- Input field behavior directly exposed and customizable
 - Password manager suggestions (Bitwarden etc.) show up in the keyboard's top
-  bar.
+  bar
 - Backup and restore for settings, shortcuts and learned words, using the same
-  format as the original Nintype, so backups go both ways.
-- Haptics can be set to off, light or strong.
-- Newer emoji font, so the emoji and kaomoji pickers don't have blank spots.
-- A button to restart the engine without restarting the app.
-- While the engine starts, the keyboard shows what it's doing instead of a
-  blank panel.
-- New settings page and icon.
-- A "keyboard 72" theme in the theme presets, dark with a drafting grid and
-  amber touches to match the settings page. Its grid replaces the light dither
-  pattern (pattern 5), which none of the original presets use.
-- No network permissions (they were only used by server mode, which stopped
-  working years ago).
+  format as the original Nintype, so backups go both ways
+- Variable haptics
+- Newer emoji and kaomoji fonts, so the emoji and kaomoji pickers don't have blank spots.
+- A separate button to restart the engine in the app without having to open the nintype menu, so that
+  if it freezes (which it shouldn't) you can reset easily
+- New settings page and icon
 
 ## Building
 
@@ -58,46 +52,3 @@ unless `ANDROID_HOME` or `GRADLE_USER_HOME` is set. Only arm64 is built.
 
 dynarmic is included in `third_party/dynarmic`; `VENDORED.md` there says which
 version it is and what was changed.
-
-### Signing
-
-Release builds are signed with the key listed in `keystore.properties` in the
-project folder (it's in `.gitignore`). Without that file they get the debug
-key. To make a key:
-
-```sh
-keytool -genkeypair -v -keystore ~/keys/keyboard72-release.jks \
-    -alias keyboard72 -keyalg RSA -keysize 4096 -validity 10000
-```
-
-and `keystore.properties`:
-
-```properties
-storeFile=/path/to/keyboard72-release.jks
-storePassword=...
-keyAlias=keyboard72
-keyPassword=...
-```
-
-Android won't update an app that was signed with a different key, so going
-from a debug build to a release build (or the other way) means uninstalling
-first. Export your backups before you do.
-
-## Credits
-
-Nintype was made by [jormy](https://github.com/jormy/nintype). Keyboard 71 is
-lurebat's work, and this builds directly on it. Their original notes on the
-code are below.
-
----
-
-Architechture:
-
-1. libgl2jni.so - The native library. Untouchable.
-2. NINLib.kt -> interfaces from the app into the library.
-3. Methods marked @Api (by me, you're welcome). Methods that the library calls as the API.
-    DO NOT CHANGE THEIR SIGNATURE
-4.Ninview - where the displaying logic happens
-5.Softkeyboard - where the keyboard logic happens
-
--lurebat
